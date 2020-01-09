@@ -1,0 +1,330 @@
+specification AD
+channel_model ACM
+
+entity Environment {
+
+	types
+		pincode < text;
+		cookie < text;
+		opid < text;
+		userrequest < text;
+		fixedString < text;
+		communication < text;
+
+	symbols
+		eic, fcmsvc, eicapp, user, browser, idps, sps, fcmsrv: agent;
+		
+		ch_B2IdPS, ch_IdPS2B: channel;
+		ch_U2B, ch_B2U: channel;
+		ch_IdPS2FCMSrv, ch_FCMSrv2IdPS: channel;
+		ch_FCMSrv2FCMSvc, ch_FCMSvc2FCMSrv: channel;
+		ch_FCMSvc2EICApp: channel;
+		ch_U2EICApp, ch_EICApp2U: channel;
+		ch_EICApp2IdPS, ch_IdPS2EICApp: channel;
+		ch_EICApp2EIC, ch_EIC2EICApp: channel;
+		ch_B2SPS, ch_SPS2B: channel;
+		ch_U2EIC: channel;
+		
+		ch_B2IdPS_2, ch_IdPS2B_2: channel;
+		ch_U2B_2, ch_B2U_2: channel;
+		ch_IdPS2FCMSrv_2, ch_FCMSrv2IdPS_2: channel;
+		ch_FCMSrv2FCMSvc_2, ch_FCMSvc2FCMSrv_2: channel;
+		ch_FCMSvc2EICApp_2: channel;
+		ch_U2EICApp_2, ch_EICApp2U_2: channel;
+		ch_EICApp2IdPS_2, ch_IdPS2EICApp_2: channel;
+		ch_EICApp2EIC_2, ch_EIC2EICApp_2: channel;
+		ch_B2SPS_2, ch_SPS2B_2: channel;
+		ch_U2EIC_2: channel;
+		
+		stringOK: fixedString;
+		request1, request2: userrequest;
+		useEIC: communication;
+		
+		nonpublic idpcookie: cookie;
+		nonpublic pin: pincode;
+		
+		nonpublic enrollmentDB(agent): agent*cookie set;
+
+	entity Session(EIC, FCMService, EICApp, User, Browser, SPServer, IdPServer, FCMServer: agent, Ch_B2IdPS, Ch_IdPS2B, Ch_U2B, Ch_B2U, Ch_IdPS2FCMSrv, Ch_FCMSrv2IdPS, Ch_FCMSrv2FCMSvc, Ch_FCMSvc2FCMSrv, Ch_FCMSvc2EICApp, Ch_U2EICApp, Ch_EICApp2U, Ch_EICApp2IdPS, Ch_IdPS2EICApp, Ch_EICApp2EIC, Ch_EIC2EICApp, Ch_B2SPS, Ch_SPS2B, Ch_U2EIC: channel, IdPCookie: cookie, Request: userrequest, PIN: pincode) {
+	
+		entity User(Actor, Browser, EICApp, SPServer, IdPServer, EIC: agent, Ch_U2B, Ch_B2U, Ch_EICApp2U, Ch_U2EICApp, Ch_U2EIC: channel, Request: userrequest, PIN: pincode) {
+		
+			body { % of User		
+				Actor -Ch_U2B-> Browser: User_authn_to_SP:(Request);			% step 1
+				
+				select {
+					on(Browser -Ch_B2U-> Actor: IdPServer):{	% step 5
+						Actor -Ch_U2B-> Browser: Actor;		% step 6
+				
+						select {
+							on(EICApp -Ch_EICApp2U-> Actor: Request):{	% step 13
+								Actor -Ch_U2EICApp-> EICApp: stringOK;		% step 14
+								
+								select {
+									on(EICApp -Ch_EICApp2U-> Actor: EICApp):{	% step 17
+										Actor -Ch_U2EICApp-> EICApp: PIN;				% step 18
+										Actor -Ch_U2EIC-> EIC: useEIC;					% step 19
+									}
+								}
+							}
+						}
+					}
+				}
+			}		
+		}
+		
+		entity Browser(Actor, User, IdPServer, SPServer: agent, Ch_B2U, Ch_B2IdPS: channel, IdPCookie: cookie) {
+			
+			symbols
+				Request: userrequest;
+			
+			body { % of Browser
+				select {
+					on(User -Ch_U2B-> Actor: ?Request):{		% step 1
+						Actor -Ch_B2SPS-> SPServer: Request;	% step 2
+						
+						select {
+							on(SPServer -Ch_SPS2B-> Actor: Request):{ % step 3a
+								Actor -Ch_B2IdPS-> IdPServer: Request;	% step 3b
+								
+								select {
+									on(IdPServer -Ch_IdPS2B-> Actor: IdPServer):{	% step 4
+										Actor -Ch_B2U-> User: IdPServer;			% step 5
+										
+										select {
+											on(User -Ch_U2B-> Actor: User):{						% step 6
+												Actor -Ch_B2IdPS-> IdPServer: User.IdPCookie;		% step 7
+												
+												select {
+													on(IdPServer -Ch_IdPS2B-> Actor: {IdPServer.User.SPServer}_inv(pk(IdPServer))):{	% step G1a
+														Actor -Ch_B2SPS-> SPServer: {IdPServer.User.SPServer}_inv(pk(IdPServer));		% step G1b
+													}
+												}
+											}
+										}	
+									}
+								}
+							}
+						}
+					}
+				}
+			}		
+		}
+		
+		entity SPServer(Actor, Browser, IdPServer, User: agent, Ch_B2SPS, Ch_SPS2B: channel, Request: userrequest) {
+			
+			body { % of SPServer
+				select {
+					on(Browser -Ch_B2SPS-> Actor: Request):{			% step 2
+						Actor -Ch_SPS2B-> Browser: Request;						% step 3a
+						
+						select {
+							on(Browser -Ch_B2SPS-> Actor: {IdPServer.User.Actor}_inv(pk(IdPServer))):{	% step G1b
+								User_authn_to_SP:(Request) := Request;
+							}
+						}
+					}
+				}
+			}		
+		}
+		
+		entity IdPServer(Actor, FCMServer, EICApp, User, SPServer, Browser, EIC: agent, Ch_B2IdPS, Ch_IdPS2FCMSrv, Ch_EICApp2IdPS, Ch_IdPS2EICApp: channel) {
+			
+			symbols
+				IdPCookie: cookie;
+				OpId: opid;
+				Request: userrequest;
+			
+			body { % of IdPServer
+				select {
+					on(Browser -Ch_B2IdPS-> Actor: ?Request):{	% step 3b
+						Actor -Ch_IdPS2B-> Browser: Actor;	% step 4
+						
+						select {
+							on(Browser -Ch_B2IdPS-> Actor: User.?IdPCookie &				% step 7
+								enrollmentDB(Actor)->contains((User,?IdPCookie))):{		% step 8
+									OpId := fresh();													% step 9
+									Actor -Ch_IdPS2FCMSrv-> FCMServer: OpId.Request;			% step 10
+									
+									select {
+										on(EICApp -Ch_EICApp2IdPS-> Actor: OpId):{						% step 15
+											Actor -Ch_IdPS2EICApp-> EICApp: OpId.Actor.SPServer;		% step 16
+											
+											select {
+												on(EICApp -Ch_EICApp2IdPS-> Actor: OpId.{OpId.Actor.SPServer}_inv(pk(EIC))):{	% step F3
+													Actor -Ch_IdPS2B-> Browser: {Actor.User.SPServer}_inv(pk(Actor));					% step G1a
+												}
+											}
+										}
+									}
+							}
+						}
+					}
+				}
+			}		
+		}
+		
+		entity FCMServer(Actor, IdPServer, FCMService: agent, Ch_IdPS2FCMSrv, Ch_FCMSrv2FCMSvc: channel) {
+			
+			symbols
+				OpId: opid;
+				Request: userrequest;
+			
+			body { % of FCMServer
+				select{
+					on(IdPServer -Ch_IdPS2FCMSrv-> Actor: ?OpId.?Request):{	 % step 10
+							Actor -Ch_FCMSrv2FCMSvc-> FCMService: OpId.Request;		% step 11
+					}
+				}
+			}		
+		}
+		
+		entity FCMService(Actor, FCMServer, EICApp: agent, Ch_FCMSrv2FCMSvc, Ch_FCMSvc2EICApp: channel) {
+			
+			symbols
+				OpId: opid;
+				Request: userrequest;
+			
+			body { % of FCMService
+				select {
+					on(FCMServer -Ch_FCMSrv2FCMSvc-> Actor: ?OpId.?Request):{		% step 11
+						Actor -Ch_FCMSvc2EICApp-> EICApp: OpId.Request;						% step 12
+					}
+				}
+			
+			}
+		}
+		
+		entity EICApp(Actor, FCMService, User, IdPServer, EIC: agent, Ch_FCMSvc2EICApp, Ch_EICApp2U, Ch_U2EICApp, Ch_EICApp2IdPS, Ch_IdPS2EICApp, Ch_EICApp2EIC, Ch_EIC2EICApp: channel) {
+			
+			symbols
+				OpId: opid;
+				SPServer: agent;
+				PIN: pincode;
+				Request: userrequest;
+			
+			body { % of EICApp
+				select {
+					on(FCMService -Ch_FCMSvc2EICApp-> Actor: ?OpId.?Request):{				% step 12
+						Actor -Ch_EICApp2U-> User: Request;							% step 13
+						
+						select {
+							on(User -Ch_U2EICApp-> Actor: stringOK):{				% step 14
+								Actor -Ch_EICApp2IdPS-> IdPServer: OpId;			% step 15
+								
+								select {
+									on(IdPServer -Ch_IdPS2EICApp-> Actor: OpId.IdPServer.?SPServer):{	% step 16
+										Actor -Ch_EICApp2U-> User: Actor;	% step 17
+									
+										select {
+											on(User -Ch_U2EICApp-> Actor: ?PIN):{	% step 18
+												Actor -Ch_EICApp2EIC-> EIC: OpId.IdPServer.SPServer.PIN; 		% step F1
+												
+												select {
+													on(EIC -Ch_EIC2EICApp-> Actor: {OpId.IdPServer.SPServer}_inv(pk(EIC))):{	% step F2
+														Actor -Ch_EICApp2IdPS-> IdPServer: OpId.{OpId.IdPServer.SPServer}_inv(pk(EIC)); % step F3
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		entity EIC(Actor, EICApp, IdPServer, User: agent, Ch_EICApp2EIC, Ch_EIC2EICApp, Ch_U2EIC: channel, PIN: pincode) {
+			
+			symbols
+				OpId: opid;
+				SPServer: agent;
+			
+			body { % of EIC
+				select {
+					on(EICApp -Ch_EICApp2EIC-> Actor: ?OpId.IdPServer.?SPServer.PIN &		% step F1
+						User -Ch_U2EIC-> Actor: useEIC):{															% step 19
+						Actor -Ch_EIC2EICApp-> EICApp: {OpId.IdPServer.SPServer}_inv(pk(Actor));		% step F2
+					}
+				}			
+			}
+		}
+		
+		body { % of Session
+
+			
+			%--- Attackers ---%
+			% PCT
+			authentic_on(Ch_U2B, User);					% commentare per attacco
+			%weakly_authentic(Ch_U2B);					% decommentare per attacco
+			% usare stesso canale in sessioni diverse
+			
+			% MDT
+			authentic_on(Ch_U2EICApp, User);			% commentare per attacco
+			%weakly_authentic(Ch_U2EICApp);				% decommentare per attacco
+			% usare stesso canale in sessioni diverse
+			
+			% CT
+			authentic_on(Ch_U2EIC, User);				% commentare per attacco
+			%weakly_authentic(Ch_U2EIC);				% decommentare per attacco
+			% usare stesso canale in sessioni diverse
+			
+			% ES, SS
+			confidential_to(Ch_U2EICApp, EICApp);		% commentare per attacco
+			
+			% SE
+			%iknows(PIN);								% decommentare per attacco
+			
+			% AD
+			iknows(PIN);								% decommentare per attacco
+			iknows(IdPCookie);							% decommentare per attacco
+			
+			% MB
+			% decommentare iknows(IdPCookie) in AD
+			
+			% MM
+			% commentare authentic_on in MDT
+			% commentare authentic_on in CT
+			% commentare confidential_to in ES, SS
+			confidential_to(Ch_FCMSvc2EICApp, EICApp);	% commentare per attacco
+			authentic_on(Ch_EICApp2U, EICApp);			% commentare per attacco
+			
+			%--- End attackers ---%
+			
+			% Channel properties
+			unilateral_conf_auth(Ch_B2IdPS, Ch_IdPS2B, IdPServer);						% ch 1: unilateral TLS: coinvolge IdPServer
+			unilateral_conf_auth(Ch_B2SPS, Ch_SPS2B, SPServer);							% ch 2: unilateral TLS: coinvolge SPServer
+			bilateral_conf_auth(Ch_IdPS2FCMSrv, Ch_FCMSrv2IdPS, IdPServer, FCMServer);	% ch 4: bilateral TLS: coinvolge due server
+			unilateral_conf_auth(Ch_FCMSvc2FCMSrv, Ch_FCMSrv2FCMSvc, FCMServer);		% ch 5: unilateral TLS: coinvolge FCMServer
+			authentic_on(Ch_FCMSvc2EICApp, FCMService);									% ch 6: canale autentico
+			unilateral_conf_auth(Ch_EICApp2IdPS, Ch_IdPS2EICApp, IdPServer);			% ch 8: unilateral TLS: coinvolge IdPServer
+			unilateral_conf_auth(Ch_EICApp2EIC, Ch_EIC2EICApp, EIC);					% ch 9: unilateral TLS: coinvolge EIC
+			
+			new User(User, Browser, EICApp, SPServer, IdPServer, EIC, Ch_U2B, Ch_B2U, Ch_EICApp2U, Ch_U2EICApp, Ch_U2EIC, Request, PIN);
+			new Browser(Browser, User, IdPServer, SPServer, Ch_B2U, Ch_B2IdPS, IdPCookie);
+			new SPServer(SPServer, Browser, IdPServer, User, Ch_B2SPS, Ch_SPS2B, Request);
+			new IdPServer(IdPServer, FCMServer, EICApp, User, SPServer, Browser, EIC, Ch_B2IdPS, Ch_IdPS2FCMSrv, Ch_EICApp2IdPS, Ch_IdPS2EICApp);
+			new FCMServer(FCMServer, IdPServer, FCMService, Ch_IdPS2FCMSrv, Ch_FCMSrv2FCMSvc);
+			new FCMService(FCMService, FCMServer, EICApp, Ch_FCMSrv2FCMSvc, Ch_FCMSvc2EICApp);
+			new EICApp(EICApp, FCMService, User, IdPServer, EIC, Ch_FCMSvc2EICApp, Ch_EICApp2U, Ch_U2EICApp, Ch_EICApp2IdPS, Ch_IdPS2EICApp, Ch_EICApp2EIC, Ch_EIC2EICApp);
+			new EIC(EIC, EICApp, IdPServer, User, Ch_EICApp2EIC, Ch_EIC2EICApp, Ch_U2EIC, PIN);
+		}
+		
+		goals
+			User_authn_to_SP:(_) User *->> SPServer;
+
+	}
+	
+	body { % of Environment
+		
+		% DB initialization
+		enrollmentDB(idps)->add((user, idpcookie));
+	
+		% Session
+		new Session(eic, fcmsvc, eicapp, user, browser, sps, idps, fcmsrv, ch_B2IdPS, ch_IdPS2B, ch_U2B, ch_B2U, ch_IdPS2FCMSrv, ch_FCMSrv2IdPS, ch_FCMSrv2FCMSvc, ch_FCMSvc2FCMSrv, ch_FCMSvc2EICApp, ch_U2EICApp, ch_EICApp2U, ch_EICApp2IdPS, ch_IdPS2EICApp, ch_EICApp2EIC, ch_EIC2EICApp, ch_B2SPS, ch_SPS2B, ch_U2EIC, idpcookie, request1, pin);
+		new Session(eic, fcmsvc, eicapp, user, browser, sps, idps, fcmsrv, ch_B2IdPS_2, ch_IdPS2B_2, ch_U2B_2, ch_B2U_2, ch_IdPS2FCMSrv_2, ch_FCMSrv2IdPS_2, ch_FCMSrv2FCMSvc_2, ch_FCMSvc2FCMSrv_2, ch_FCMSvc2EICApp_2, ch_U2EICApp_2, ch_EICApp2U_2, ch_EICApp2IdPS_2, ch_IdPS2EICApp_2, ch_EICApp2EIC_2, ch_EIC2EICApp_2, ch_B2SPS_2, ch_SPS2B_2, ch_U2EIC_2, idpcookie, request2, pin);
+	
+	}
+}
